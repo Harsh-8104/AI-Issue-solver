@@ -67,6 +67,11 @@ persistent server, container, or sandbox to manage or pay for.
 - **Non-blocking test execution.** Tests run if a recognizable test command
   exists, and results are posted in the PR body. It doesn't gate the PR yet —
   that's an intentional v1 simplification (see Roadmap).
+- **Force-push on the solver branch.** Re-triggering `/solve` on an issue that
+  was already attempted (e.g. after a failed prior run) reuses the same
+  branch name. Since that branch is exclusively owned by the bot, it's
+  force-pushed rather than rejected on a non-fast-forward — the latest
+  attempt always wins.
 
 ## Current scope (v1)
 
@@ -78,6 +83,39 @@ Will decline (mark `"solvable": false` and comment instead of guessing):
 - Broad architectural changes
 - Issues touching more than ~6 files
 - Vague issues lacking enough detail to act on safely
+
+## Scope: which repos can this act on?
+
+By default, **this only works on the repo it's installed in.** The workflow
+listens for `/solve` comments on issues in *this* repo alone — it has no
+reach into your other projects unless it's explicitly set up there too.
+There are three ways to extend that:
+
+**1. Per-repo install (simplest)**
+Copy `.github/workflows/solve-issue.yml`, `solver/`, `requirements.txt`, and
+`.gitignore` into any other repo, add a `GEMINI_API_KEY` secret there, and it
+runs independently. No shared state between repos — just duplicated code.
+
+**2. Reusable workflow (one source of truth)**
+Keep the `solver/` package here, and have other repos reference this
+workflow instead of copying it:
+```yaml
+jobs:
+  solve:
+    uses: Harsh-8104/ai-issue-solver/.github/workflows/solve-issue.yml@main
+    secrets: inherit
+```
+Update the logic once, every repo using it picks up the change automatically.
+
+**3. Published GitHub Action (most reusable)**
+Package it with an `action.yml` and publish to the GitHub Marketplace so any
+public repo — not just mine — can add it with a few lines of YAML. This is
+the natural direction if the goal is a tool other developers can install,
+rather than a personal script.
+
+In all three cases, it still only *acts* where it's deliberately triggered —
+it's not a bot that scans or roams GitHub on its own; it needs to be added to
+a repo and given a valid API key before it can do anything there.
 
 ## Roadmap / extensibility hooks already in place
 
