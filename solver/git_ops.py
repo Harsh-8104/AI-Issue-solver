@@ -67,5 +67,5 @@ def commit_and_push(branch_name: str, commit_message: str, changed_paths: list[s
     if not status.strip():
         return False
     run("git", "commit", "-m", commit_message)
-    run("git", "push", "--set-upstream", "origin", branch_name)
+    run("git", "push", "--force", "--set-upstream", "origin", branch_name)
     return True
