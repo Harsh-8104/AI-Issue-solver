@@ -1,0 +1,91 @@
+name: AI Issue Solver
+
+# Triggers when someone comments "/solve" on an issue, or adds the "ai-solve" label.
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  solve:
+    # Only run for actual issues (not PR comments) and only when triggered correctly
+    if: >
+      (github.event_name == 'issue_comment' &&
+       !github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/solve')) ||
+      (github.event_name == 'issues' &&
+       github.event.label.name == 'ai-solve')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check commenter permission
+        id: perm
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const actor = context.payload.comment
+              ? context.payload.comment.user.login
+              : context.payload.sender.login;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor,
+            });
+            const allowed = ['admin', 'write'].includes(data.permission);
+            if (!allowed) {
+              core.setFailed(`User ${actor} does not have write access. Aborting.`);
+            }
+
+      - name: React to trigger (acknowledge)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: '🤖 **AI Issue Solver** is on it — reading the issue, drafting a plan, and writing code. I will open a PR shortly (or comment here if something blocks me).',
+            });
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI Issue Solver
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: python -m solver.main
+
+      - name: Report failure on issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: '⚠️ I ran into a problem while working on this issue and stopped before opening a PR. Check the [workflow logs](' + context.payload.repository.html_url + '/actions/runs/' + context.runId + ') for details.',
+            });
